@@ -56,14 +56,20 @@ pytest --candidate data/pregenerated/candidates/deepseek.py
 
 ## Fallback (no keys, no internet)
 
-Turn on "Use the pre-generated code" in the GUI. It loads the four candidates from the
-original study in `data/pregenerated/`. These files are untouched. Their model versions were
-never recorded, so the tables show "Not recorded".
+Turn on "Use pre-generated code" in the GUI. It loads the four candidates saved from the
+original study in `data/pregenerated/candidates/`. These files are untouched. Their model
+versions were never recorded, so the tables show "Not recorded".
+
+Only the code is stored. A fallback run is tested and scanned by the tool like any other run,
+and it starts with no manual reviews, the same as a live run. Its results come from running
+the tool, not from files in this repository.
 
 Semgrep normally runs with `--config=auto`, which downloads rules and sends usage metrics to
-Semgrep. If it cannot reach the network, it falls back to the small ruleset in
-`rules/semgrep_local.yml`. The ruleset used is saved in the results (`semgrep_ruleset`).
-The local ruleset has only two rules, so offline runs can find fewer issues.
+Semgrep. If that fails or does not answer within 60 seconds (for example with the network
+blocked), the tool falls back to the small ruleset in `rules/semgrep_local.yml`. The ruleset
+used is saved in the results (`semgrep_ruleset`). The local ruleset has only two rules, so
+offline runs can find fewer issues. If a scanner cannot run at all, its count shows as "n/a"
+and is never reported as 0, because 0 would wrongly mean "scanned and clean".
 
 ## Settings
 
@@ -97,30 +103,20 @@ downloads rules for each file.
   it needs API keys. Its tests were checked against a correct hand-written app and three
   broken ones (`unit_tests/task2_reference.py`), not against real model output yet.
 
-## Results on the original four candidates
+## Results
 
-| Provider | Original 5 tests | All 30 tests | Bandit | Semgrep | Confirmed |
-|---|---|---|---|---|---|
-| OpenAI | 5/5 | 30/30 | 0 | 0 | 0 |
-| Claude | 5/5 | 30/30 | 0 | 0 | 0 |
-| DeepSeek | 4/5 | 25/30 | 1 | 1 | 2 (CWE-1287, CWE-489) |
-| Gemini | 5/5 | 23/30 | 1 | 1 | 2 (CWE-1287, CWE-489) |
-
-The original suite gives 19/20. The expanded suite gives 108/120. Always say which suite a
-number comes from.
-
-DeepSeek crashes on a JSON array, number, string or boolean as the whole body. Gemini crashes
-on a number or boolean body, on a number, null or boolean password, and on a list or object
-username. OpenAI and Claude return 401 on all of them. Both scanners flag `debug=True` in the
-DeepSeek and Gemini files.
+This repository stores no results. Run the tool to produce them. Every run writes
+`results.csv`, `model_comparison.png` and `evaluation.json` into its own `runs/<timestamp>/`
+folder, and the GUI shows the same table. When you quote a number, say which suite it comes
+from (the original five tests or the full suite) and which run produced it.
 
 ## Limits to state in the paper
 
-- One generation per model by default. The GUI can run several, but the old results are single runs.
+- One generation per model by default. The GUI can run several.
 - Scanner counts are not confirmed vulnerabilities. Confirmed findings come from manual review.
 - The four old candidates have no recorded model versions.
 - Temperature is not the same for all providers (see Settings).
-- Bandit and Semgrep versions are newer than in the original run. The counts did not change.
+- Scanner versions can differ from the original study. Each run records the versions it used.
 
 ## Layout
 
@@ -129,7 +125,7 @@ config.yaml  prompts/  rules/  conftest.py  pytest.ini  requirements.txt  .env.e
 src/aicodesec/   generate, providers, extract, evaluate, report
 app/streamlit_app.py
 tests/  tests_task2/  unit_tests/
-data/pregenerated/   the four original candidates, scanner reports, results CSV, chart
-runs/<timestamp>/    output of each run (ignored by git, except runs/sample)
+data/pregenerated/   the four original candidates (code only)
+runs/<timestamp>/    output of each run (ignored by git)
 docs/                paper and report sources (to be added)
 ```

@@ -69,9 +69,15 @@ def build_table(evaluation_file: Path, reviews: list[dict], labels: dict[str, st
             "manual_review_notes": " ".join(review["note"] for review in mine) or "No specific vulnerability confirmed.",
             "semgrep_ruleset": item["semgrep_ruleset"],
         })
+    if not rows:
+        return pd.DataFrame()  # Nothing was evaluated (for example every provider failed). Callers check .empty.
     # Keep the provider order from config.yaml so every table and chart reads the same way.
     order = list(labels.values())
     table = pd.DataFrame(sorted(rows, key=lambda row: (order.index(row["provider"]), row["candidate_file"])))
+    # A scanner that did not run has no count (None). Int64 keeps real counts as whole numbers
+    # and shows the missing ones as <NA>, instead of turning every count into a decimal.
+    for column in ("bandit_findings", "semgrep_findings"):
+        table[column] = table[column].astype("Int64")
     # Task 2 has no original five tests, so those columns would only show zeros.
     if table["original_tests_total"].sum() == 0:
         table = table.drop(columns=["original_tests_passed", "original_tests_total"])

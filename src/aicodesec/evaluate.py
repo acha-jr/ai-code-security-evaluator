@@ -17,14 +17,41 @@ ROOT = Path(__file__).resolve().parents[2]
 LOCAL_RULES = ROOT / "rules" / "semgrep_local.yml"
 TEST_TIMEOUT = 120  # Seconds before a stuck test run is stopped.
 SCAN_TIMEOUT = 300  # Seconds before a stuck scanner is stopped.
+# Semgrep "auto" must download its rules. With no network it can hang instead of failing fast,
+# so it gets a much shorter limit. After that we fall back to the local rules.
+AUTO_TIMEOUT = 60
 # The first five tests of the study. They are reported on their own so the old 19/20 stays visible.
 ORIGINAL_FILES = ("tests.test_login", "tests.test_security_edges")
 # Semgrep is installed next to this Python, so the venv does not need to be activated.
 SEMGREP = str(Path(sys.executable).parent / "semgrep")
 
 
+def run_quietly(command: list[str], timeout: int) -> bool:
+    """Run a command and wait up to `timeout` seconds. Return False if it had to be stopped.
+
+    This is the one place that catches subprocess.TimeoutExpired, so a hung tool can never
+    crash the evaluation. Output goes to DEVNULL (nowhere) on purpose: every tool here writes
+    its results to a file, and not reading from a pipe means a stuck child cannot keep us waiting.
+    """
+    try:
+        subprocess.run(command, cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
+        return True
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def read_results(out_file: Path) -> list | None:
+    """Read the "results" list from a scanner's JSON file, or None if the file is missing or broken."""
+    try:
+        return json.loads(out_file.read_text())["results"]
+    except (OSError, ValueError, KeyError):
+        return None
+
+
 def run_tests(candidate: Path, tests_dir: str = "tests") -> dict:
     """Run a pytest suite on one candidate in a subprocess and count the results."""
+    # If the tests cannot run or are stopped, report zero tests. A failing candidate is a result too.
+    no_result = {"tests_passed": 0, "tests_total": 0, "original_passed": 0, "original_total": 0}
     # A temporary folder holds pytest's result file. It is deleted when the block ends.
     with tempfile.TemporaryDirectory() as temp:
         report = Path(temp) / "junit.xml"
@@ -35,12 +62,8 @@ def run_tests(candidate: Path, tests_dir: str = "tests") -> dict:
             sys.executable, "-m", "pytest", tests_dir, "--candidate", str(candidate),
             "-q", "-p", "no:cacheprovider", f"--junit-xml={report}",
         ]
-        try:
-            subprocess.run(command, cwd=ROOT, capture_output=True, timeout=TEST_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            return {"tests_passed": 0, "tests_total": 0, "original_passed": 0, "original_total": 0}
-        if not report.exists():
-            return {"tests_passed": 0, "tests_total": 0, "original_passed": 0, "original_total": 0}
+        if not run_quietly(command, TEST_TIMEOUT) or not report.exists():
+            return no_result
         # The XML file lists one <testcase> per test. A failed test has a <failure> or <error> inside it.
         cases = list(ET.parse(report).getroot().iter("testcase"))
 
@@ -59,10 +82,18 @@ def run_tests(candidate: Path, tests_dir: str = "tests") -> dict:
 
 
 def run_bandit(candidate: Path, out_file: Path) -> dict:
-    """Run Bandit, save its JSON, and return the finding count and CWE ids."""
+    """Run Bandit, save its JSON, and return the finding count and CWE ids.
+
+    If Bandit times out or writes no usable file, the count is None ("not run").
+    A 0 would wrongly say the code was scanned and found clean.
+    """
+    out_file.unlink(missing_ok=True)  # Never reuse an old file from an earlier run.
     command = [sys.executable, "-m", "bandit", "-q", "-f", "json", "-o", str(out_file), str(candidate)]
-    subprocess.run(command, capture_output=True, timeout=SCAN_TIMEOUT)  # Exit code 1 only means "findings".
-    results = json.loads(out_file.read_text())["results"]
+    finished = run_quietly(command, SCAN_TIMEOUT)  # Exit code 1 only means "findings", so it is not checked.
+    results = read_results(out_file) if finished else None
+    if results is None:
+        out_file.unlink(missing_ok=True)  # Drop a half-written file.
+        return {"bandit_findings": None, "bandit_cwes": []}
     return {
         "bandit_findings": len(results),
         "bandit_cwes": sorted({f"CWE-{item['issue_cwe']['id']}" for item in results}),
@@ -70,22 +101,23 @@ def run_bandit(candidate: Path, out_file: Path) -> dict:
 
 
 def run_semgrep(candidate: Path, out_file: Path) -> dict:
-    """Run Semgrep with --config=auto, or with the local rules if auto cannot download."""
-    ruleset = "auto"
-    # Try the online ruleset first. If it fails (no internet), try the small local one.
-    for config in ("auto", str(LOCAL_RULES)):
+    """Run Semgrep with --config=auto, or with the local rules if auto fails or hangs."""
+    # Try the online ruleset first, with a short limit. If it fails or hangs (no internet),
+    # try the small local ruleset instead.
+    for config, timeout, ruleset in (
+        ("auto", AUTO_TIMEOUT, "auto"),
+        (str(LOCAL_RULES), SCAN_TIMEOUT, f"local ({LOCAL_RULES.name})"),
+    ):
         out_file.unlink(missing_ok=True)  # Remove old output so a failed run is not mistaken for a good one.
         command = [SEMGREP, "--config", config, "--json", "-q", "-o", str(out_file), str(candidate)]
-        subprocess.run(command, capture_output=True, timeout=SCAN_TIMEOUT)
-        if out_file.exists():
+        finished = run_quietly(command, timeout)
+        results = read_results(out_file) if finished else None
+        if results is not None:
             # Record which ruleset really ran, so offline results are never presented as online ones.
-            ruleset = "auto" if config == "auto" else f"local ({LOCAL_RULES.name})"
-            break
-    else:
-        # The loop finished without a break: neither ruleset produced a result.
-        return {"semgrep_findings": 0, "semgrep_ruleset": "failed to run"}
-    results = json.loads(out_file.read_text())["results"]
-    return {"semgrep_findings": len(results), "semgrep_ruleset": ruleset}
+            return {"semgrep_findings": len(results), "semgrep_ruleset": ruleset}
+    # Neither ruleset produced a result. Say "not run" (None), never a false 0.
+    out_file.unlink(missing_ok=True)
+    return {"semgrep_findings": None, "semgrep_ruleset": "failed to run"}
 
 
 def evaluate_candidates(

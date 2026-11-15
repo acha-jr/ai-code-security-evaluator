@@ -89,6 +89,11 @@ def results_table(table: pd.DataFrame) -> None:
     )
 
 
+def count_text(value: object) -> str:
+    """Show a scanner count as text, or "n/a" when the scanner did not run (no count was recorded)."""
+    return "n/a" if pd.isna(value) else str(value)
+
+
 # ---- Sidebar: settings ----
 with st.sidebar:
     st.header("Setup")
@@ -161,8 +166,7 @@ with tab_generate:
             (run_dir / "candidates").mkdir(parents=True)
             for file in (PREGENERATED / "candidates").glob("*.py"):
                 shutil.copy2(file, run_dir / "candidates" / file.name)
-            # Copy the reviews so new entries never change the original data.
-            shutil.copy2(PREGENERATED / "manual_reviews.csv", run_dir / "manual_reviews.csv")
+            # No manual reviews are copied in. A fallback run starts with none, like a live run.
             # Remember the run, so the other tabs (and the next re-run of this script) can use it.
             st.session_state.update(run_dir=run_dir, candidates_dir=run_dir / "candidates", evaluation=None, tests=task["tests"])
     else:
@@ -187,6 +191,12 @@ with tab_generate:
         metadata_file = run_dir / "metadata.json"
         if metadata_file.exists():  # Pre-generated runs have no metadata file.
             items = json.loads(metadata_file.read_text())["candidates"]
+            if all("error" in item for item in items):
+                # Every provider failed, so there is no code to test. Say what to check.
+                st.error(
+                    "No provider returned any code. Check the API keys (the dots in the sidebar), "
+                    "your account credits and your internet connection, then click Generate code again."
+                )
             for start in range(0, len(items), 4):  # Four cards per row.
                 for column, item in zip(st.columns(4), items[start:start + 4]):
                     with column:
@@ -196,6 +206,9 @@ with tab_generate:
 with tab_evaluate:
     if run_dir is None:
         st.info("Get the code first (step 1).")
+    elif not any(st.session_state["candidates_dir"].glob("*.py")):
+        # A run folder exists, but no provider produced a code file.
+        st.warning("There is no code to test yet. Go back to step 1, fix the problem shown there, and generate again.")
     else:
         st.write("Runs the shared pytest suite, Bandit and Semgrep on every candidate. This takes a few minutes.")
         if st.button("Run tests, Bandit and Semgrep", type="primary"):
@@ -221,6 +234,9 @@ with tab_compare:
         reviews_file = run_dir / "manual_reviews.csv"
         # One row per candidate: tests, scanner counts, and the manual review findings.
         table = build_table(evaluation, load_reviews(reviews_file), labels, run_dir / "metadata.json")
+        if table.empty:
+            st.warning("There are no results to compare, because no candidate was evaluated. Generate code again in step 1.")
+            st.stop()  # Nothing below can work without at least one row. This is the last tab.
 
         # A summary card for each provider.
         for column, row in zip(st.columns(len(table)), table.itertuples()):
@@ -228,7 +244,7 @@ with tab_compare:
                 st.metric(
                     row.provider,
                     f"{row.functional_tests_passed}/{row.functional_tests_total} tests",
-                    f"Bandit {row.bandit_findings} · Semgrep {row.semgrep_findings} · Confirmed {row.manually_confirmed_findings}",
+                    f"Bandit {count_text(row.bandit_findings)} · Semgrep {count_text(row.semgrep_findings)} · Confirmed {row.manually_confirmed_findings}",
                     delta_color="off",
                     delta_arrow="off",
                 )

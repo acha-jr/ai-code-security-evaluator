@@ -5,6 +5,5 @@ __pycache__/
 *.pyc
 .DS_Store
 
-# Run output stays local, except the sample run kept for the README.
+# Run output stays local and is not committed.
 runs/*
-!runs/sample/

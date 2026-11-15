@@ -1,5 +1,0 @@
-provider,cwe,note
-DeepSeek,CWE-1287,JSON array raised AttributeError.
-DeepSeek,CWE-489,debug=True flagged by both scanners.
-Gemini,CWE-1287,Numeric JSON raised TypeError.
-Gemini,CWE-489,debug=True flagged by both scanners.
