@@ -1,0 +1,10 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store
+
+# Run output stays local, except the sample run kept for the README.
+runs/*
+!runs/sample/

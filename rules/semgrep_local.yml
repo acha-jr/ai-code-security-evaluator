@@ -1,0 +1,17 @@
+# Small local ruleset, used only when Semgrep cannot reach the network for --config=auto.
+# It is a subset of what the registry offers. The evaluation records when it was used.
+rules:
+  - id: flask-debug-enabled
+    languages: [python]
+    severity: WARNING
+    message: Flask app is run with debug=True. This exposes the Werkzeug debugger.
+    pattern: $APP.run(..., debug=True, ...)
+  - id: sqlite-query-built-from-string
+    languages: [python]
+    severity: ERROR
+    message: SQL query is built from a string instead of using ? placeholders.
+    pattern-either:
+      - pattern: $CUR.execute(f"...", ...)
+      - pattern: $CUR.execute("..." % ..., ...)
+      - pattern: $CUR.execute("...".format(...), ...)
+      - pattern: $CUR.execute("..." + ..., ...)

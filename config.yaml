@@ -1,0 +1,41 @@
+# Model IDs and settings live here so nothing is hardcoded in the code.
+# Check each model ID against the provider's current model list before a real run.
+# The model name the API actually returns is recorded in metadata.json for every run.
+# A provider can set its own temperature. null means "do not send one", for models that reject it.
+
+temperature: 0.0
+max_output_tokens: 8192
+timeout_seconds: 120
+runs_per_model: 1
+
+tasks:
+  task1:
+    label: "Task 1: login endpoint"
+    prompt: prompts/login_v1.txt
+    tests: tests
+  task2:
+    label: "Task 2: login plus protected route"
+    prompt: prompts/login_v2.txt
+    tests: tests_task2
+
+providers:
+  openai:
+    label: OpenAI
+    model: gpt-5
+    temperature: null
+    max_tokens_param: max_completion_tokens
+    api_key_env: OPENAI_API_KEY
+  claude:
+    label: Claude
+    model: claude-sonnet-5-5
+    temperature: null
+    api_key_env: ANTHROPIC_API_KEY
+  deepseek:
+    label: DeepSeek
+    model: deepseek-chat
+    api_key_env: DEEPSEEK_API_KEY
+    base_url: https://api.deepseek.com
+  gemini:
+    label: Gemini
+    model: gemini-3.6-flash
+    api_key_env: GEMINI_API_KEY

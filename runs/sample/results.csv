@@ -1,0 +1,5 @@
+provider,model_version,candidate_file,functional_tests_passed,functional_tests_total,original_tests_passed,original_tests_total,bandit_findings,semgrep_findings,manually_confirmed_findings,cwe_classification,manual_review_notes,semgrep_ruleset
+OpenAI,Not recorded,openai.py,30,30,5,5,0,0,0,None assigned,No specific vulnerability confirmed.,auto
+Claude,Not recorded,claude.py,30,30,5,5,0,0,0,None assigned,No specific vulnerability confirmed.,auto
+DeepSeek,Not recorded,deepseek.py,25,30,4,5,1,1,2,CWE-1287; CWE-489,JSON array raised AttributeError. debug=True flagged by both scanners.,auto
+Gemini,Not recorded,gemini.py,23,30,5,5,1,1,2,CWE-1287; CWE-489,Numeric JSON raised TypeError. debug=True flagged by both scanners.,auto
