@@ -1,4 +1,4 @@
-# AI generated code security study
+# Evaluating Security Vulnerabilities in AI-Generated Code for Common Web-Application Tasks
 
 Course project for COMP 5112 (Dr. Fiaidhi). Authors: Obinna Achazie, Ahmed Omar Ali.
 

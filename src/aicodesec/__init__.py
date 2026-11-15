@@ -1,1 +1,1 @@
-"""Tools for the AI generated code security study (COMP 5112)."""
+"""Tools for the study: Evaluating Security Vulnerabilities in AI-Generated Code for Common Web-Application Tasks (COMP 5112)."""

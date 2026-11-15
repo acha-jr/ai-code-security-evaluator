@@ -37,7 +37,7 @@ PREGENERATED = ROOT / "data" / "pregenerated"
 config = generate.load_config()
 labels = {name: block["label"] for name, block in config["providers"].items()}
 
-st.set_page_config(page_title="AI Code Security Study", page_icon=":material/shield:", layout="wide")
+st.set_page_config(page_title="AI-Generated Code Security", page_icon=":material/shield:", layout="wide")
 
 
 def candidate_card(item: dict, run_dir: Path) -> None:
@@ -116,7 +116,7 @@ with st.sidebar:
             st.caption(f"{':green[●]' if found else ':red[●]'} {labels[name]} · `{block['model']}` · key {'found' if found else 'missing'}")
 
 # ---- Header and progress ----
-st.title("AI generated code: security comparison")
+st.title("Evaluating Security Vulnerabilities in AI-Generated Code for Common Web-Application Tasks")
 st.caption("COMP 5112 · One fixed prompt goes to four providers. The code that comes back is tested and scanned.")
 
 # Read what earlier clicks saved. run_dir is the folder of the run we are working on.
