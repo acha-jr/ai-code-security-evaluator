@@ -36,9 +36,11 @@ You can skip the keys and use the pre-generated code instead (see Fallback below
 streamlit run app/streamlit_app.py
 ```
 
-The page has three steps: get the code, test and scan, compare. Step 1 shows the prompt and
-the source of the function that sends it. After generating, each candidate has an expander
-with the raw API reply next to the code that was saved.
+The page has three steps: get the code, test and scan, compare. Step 1 shows the prompt.
+After generating, each candidate has an expander with the raw API reply next to the code
+that was saved. For the code that sends the prompt, see:
+`generate_one()` in `src/aicodesec/generate.py` and the `complete()` method of each class in
+`src/aicodesec/providers.py`.
 
 ## Run without the GUI
 

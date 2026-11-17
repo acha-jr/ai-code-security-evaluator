@@ -10,7 +10,6 @@ The page has a sidebar for settings and three tabs for the three steps:
   2. Test and scan   run pytest, Bandit and Semgrep
   3. Compare         table, chart, CSV and the manual review form
 """
-import inspect
 import json
 import os
 import shutil
@@ -170,9 +169,6 @@ with tab_generate:
             # Remember the run, so the other tabs (and the next re-run of this script) can use it.
             st.session_state.update(run_dir=run_dir, candidates_dir=run_dir / "candidates", evaluation=None, tests=task["tests"])
     else:
-        # For the demo: this shows the real function that sends the prompt, read from the source file.
-        with st.expander("Show the code that sends the prompt"):
-            st.code(inspect.getsource(generate.generate_one), language="python")
         if st.button("Generate code", type="primary", disabled=not chosen or not prompt.strip()):
             prompt_name = prompt_file.name if prompt.strip() == original_prompt else f"custom (edited from {prompt_file.name})"
             with st.status("Generating...", expanded=True) as status:
