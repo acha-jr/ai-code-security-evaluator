@@ -96,6 +96,10 @@ def save_chart(table: pd.DataFrame, path: Path) -> None:
     right.bar(names, table["manually_confirmed_findings"], color="#273B63")
     right.set(title="Manually confirmed issue instances", ylabel="Issue instances")
     right.yaxis.get_major_locator().set_params(integer=True)  # Whole numbers only, since we count issues.
+    # Start at 0 and never let the top drop below 1. With all counts at zero, matplotlib would
+    # otherwise draw a strange axis from about -0.04 to 0.04. The extra 15 percent leaves room
+    # for the number written above the tallest bar.
+    right.set_ylim(0, max(1, 1.15 * table["manually_confirmed_findings"].max()))
     # Write the value above each bar.
     for axis, values, suffix in ((left, rate, "%"), (right, table["manually_confirmed_findings"], "")):
         for position, value in enumerate(values):

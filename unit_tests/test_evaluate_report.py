@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from aicodesec import evaluate
+from aicodesec import evaluate, report
 from aicodesec.evaluate import evaluate_candidates
 from aicodesec.generate import load_config
 from aicodesec.report import add_review, build_table, load_reviews
@@ -143,3 +143,15 @@ def test_no_candidates_gives_an_empty_table_not_an_error(tmp_path: Path) -> None
     (tmp_path / "empty").mkdir()
     table = build_table(evaluate_candidates(tmp_path / "empty", tmp_path / "out"), [], labels())
     assert table.empty
+
+
+def test_chart_axis_starts_at_zero_with_a_top_of_at_least_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """When every confirmed count is 0, the right-hand axis is 0 to 1, not a strange -0.04 to 0.04."""
+    drawn = []
+    monkeypatch.setattr(report.plt, "close", drawn.append)  # Keep the figure so the test can inspect it.
+    table = pd.DataFrame({
+        "provider": ["OpenAI", "Claude"], "candidate_file": ["openai.py", "claude.py"],
+        "functional_tests_passed": [30, 25], "functional_tests_total": [30, 30], "manually_confirmed_findings": [0, 0],
+    })
+    report.save_chart(table, tmp_path / "chart.png")
+    assert drawn[0].axes[1].get_ylim() == (0, 1)
