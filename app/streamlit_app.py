@@ -249,7 +249,8 @@ with tab_compare:
         # Save the same numbers to disk, so the GUI, the CSV and the chart can never disagree.
         table.to_csv(run_dir / "results.csv", index=False)
         save_chart(table, run_dir / "model_comparison.png")
-        st.image(str(run_dir / "model_comparison.png"))
+        # The chart is tall (two charts stacked), so cap its width instead of filling the wide page.
+        st.image(str(run_dir / "model_comparison.png"), width=560)
         st.download_button("Download results.csv", (run_dir / "results.csv").read_bytes(), "results.csv", icon=":material/download:")
         st.caption("Bandit and Semgrep findings can overlap when both flag the same issue.")
 

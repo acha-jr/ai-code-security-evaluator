@@ -86,22 +86,22 @@ def build_table(evaluation_file: Path, reviews: list[dict], labels: dict[str, st
 
 def save_chart(table: pd.DataFrame, path: Path) -> None:
     """Draw pass rate and confirmed findings per candidate, like the original chart."""
-    figure, (left, right) = plt.subplots(1, 2, figsize=(10, 4.2))  # Two charts side by side.
+    figure, (top, bottom) = plt.subplots(2, 1, figsize=(7, 8))  # Two charts, one above the other.
     stems = table["candidate_file"].str.removesuffix(".py")
     # Repeated generations are named openai_1, openai_2 and so on. Show the number after the label.
     names = [f"{label} {stem.split('_')[1]}" if "_" in stem else label for label, stem in zip(table["provider"], stems)]
     rate = 100 * table["functional_tests_passed"] / table["functional_tests_total"]
-    left.bar(names, rate, color="#6553BD")
-    left.set(title="Functional test pass rate", ylabel="Passed (%)", ylim=(0, 110))
-    right.bar(names, table["manually_confirmed_findings"], color="#273B63")
-    right.set(title="Manually confirmed issue instances", ylabel="Issue instances")
-    right.yaxis.get_major_locator().set_params(integer=True)  # Whole numbers only, since we count issues.
+    top.bar(names, rate, color="#6553BD")
+    top.set(title="Functional test pass rate", ylabel="Passed (%)", ylim=(0, 110))
+    bottom.bar(names, table["manually_confirmed_findings"], color="#273B63")
+    bottom.set(title="Manually confirmed issue instances", ylabel="Issue instances")
+    bottom.yaxis.get_major_locator().set_params(integer=True)  # Whole numbers only, since we count issues.
     # Start at 0 and never let the top drop below 1. With all counts at zero, matplotlib would
     # otherwise draw a strange axis from about -0.04 to 0.04. The extra 15 percent leaves room
     # for the number written above the tallest bar.
-    right.set_ylim(0, max(1, 1.15 * table["manually_confirmed_findings"].max()))
+    bottom.set_ylim(0, max(1, 1.15 * table["manually_confirmed_findings"].max()))
     # Write the value above each bar.
-    for axis, values, suffix in ((left, rate, "%"), (right, table["manually_confirmed_findings"], "")):
+    for axis, values, suffix in ((top, rate, "%"), (bottom, table["manually_confirmed_findings"], "")):
         for position, value in enumerate(values):
             axis.text(position, value, f"{value:.0f}{suffix}", ha="center", va="bottom")
         axis.tick_params(axis="x", rotation=15)
