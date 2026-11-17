@@ -62,12 +62,7 @@ def results_table(table: pd.DataFrame) -> None:
     shown = table.copy()  # Work on a copy so the CSV keeps the original column names.
     shown["pass rate"] = 100 * shown["functional_tests_passed"] / shown["functional_tests_total"]
     shown["tests"] = shown["functional_tests_passed"].astype(str) + "/" + shown["functional_tests_total"].astype(str)
-    columns = ["provider", "model_version", "tests", "pass rate"]
-    # Task 2 has no "original 5" columns, so only add them when they exist.
-    if "original_tests_passed" in shown:
-        shown["original 5"] = shown["original_tests_passed"].astype(str) + "/" + shown["original_tests_total"].astype(str)
-        columns.append("original 5")
-    columns += ["bandit_findings", "semgrep_findings", "manually_confirmed_findings", "cwe_classification", "semgrep_ruleset"]
+    columns = ["provider", "model_version", "tests", "pass rate","bandit_findings", "semgrep_findings", "manually_confirmed_findings", "cwe_classification", "semgrep_ruleset"]
     st.dataframe(
         shown[columns],
         hide_index=True,
@@ -78,7 +73,6 @@ def results_table(table: pd.DataFrame) -> None:
             "provider": "Provider",
             "model_version": "Model",
             "tests": "Tests passed",
-            "original 5": "Original 5",
             "bandit_findings": "Bandit",
             "semgrep_findings": "Semgrep",
             "manually_confirmed_findings": "Confirmed",
@@ -100,11 +94,11 @@ with st.sidebar:
         "Task", list(config["tasks"]), format_func=lambda name: config["tasks"][name]["label"], key="task"
     )
     task = config["tasks"][task_name]
-    # The old candidates only exist for Task 1, so the toggle is switched off for Task 2.
+    # The pre-generated candidates only exist for Task 1, so the toggle is switched off for Task 2.
     use_fallback = (
         st.toggle(
             "Use pre-generated code",
-            help="Loads the four original candidates. No keys or internet needed.",
+            help="Loads four pre-generated candidates. No keys or internet needed.",
             disabled=task_name != "task1",
             key="fallback",
         )
@@ -148,9 +142,9 @@ with tab_generate:
             st.session_state.setdefault(prompt_key, original_prompt)
             prompt = st.text_area("Prompt", key=prompt_key, height=230, label_visibility="collapsed")
             if prompt.strip() == original_prompt:
-                st.caption("Original study prompt, unchanged. Results are comparable with the earlier runs.")
+                st.caption("Standard prompt, unchanged. Runs that use it can be compared with each other.")
             else:
-                st.warning("This prompt was edited. Results are not comparable with the original study.", icon=":material/edit:")
+                st.warning("This prompt was edited. Results are not comparable with runs that use the standard prompt.", icon=":material/edit:")
             st.button(
                 "Reset to original",
                 on_click=lambda: st.session_state.update({prompt_key: original_prompt}),
@@ -158,7 +152,7 @@ with tab_generate:
             )
 
     if use_fallback:
-        st.info("The four original candidates from `data/pregenerated/` will be used. Their model versions were not recorded.")
+        st.info("The four pre-generated candidates from `data/pregenerated/` will be used. Their model versions were not recorded.")
         if st.button("Load pre-generated code", type="primary"):
             # Work on a copy in a new run folder, so the original files in data/ are never touched.
             run_dir = ROOT / "runs" / (datetime.now().strftime("%Y%m%d-%H%M%S") + "-pregenerated")

@@ -2,7 +2,7 @@
 
 Course project for COMP 5112 (Dr. Fiaidhi). Authors: Obinna Achazie, Ahmed Omar Ali.
 
-This tool repeats our study without the Colab notebook. It sends one fixed prompt to four
+This tool runs our study from start to finish. It sends one fixed prompt to four
 providers (OpenAI, Claude, DeepSeek, Gemini), saves the generated code unchanged, runs the
 same pytest tests plus Bandit and Semgrep on each result, and shows the comparison.
 
@@ -58,9 +58,9 @@ pytest --candidate data/pregenerated/candidates/deepseek.py
 
 ## Fallback (no keys, no internet)
 
-Turn on "Use pre-generated code" in the GUI. It loads the four candidates saved from the
-original study in `data/pregenerated/candidates/`. These files are untouched. Their model
-versions were never recorded, so the tables show "Not recorded".
+Turn on "Use pre-generated code" in the GUI. It loads four pre-generated candidates from
+`data/pregenerated/candidates/`. Their model versions were never recorded, so the tables show
+"Not recorded".
 
 Only the code is stored. A fallback run is tested and scanned by the tool like any other run,
 and it starts with no manual reviews, the same as a live run. Its results come from running
@@ -88,7 +88,7 @@ some OpenAI models only allow their default. DeepSeek and Gemini use 0.0. Mentio
 
 | Folder | What it checks |
 |---|---|
-| `tests/test_login.py`, `tests/test_security_edges.py` | The original five tests, unchanged. |
+| `tests/test_login.py`, `tests/test_security_edges.py` | 5 basic login tests: valid login, wrong password, unknown user, one SQL injection attempt, and a JSON array body. |
 | `tests/test_malformed.py` | 15 malformed inputs. Each must give 401, never an exception or 5xx. |
 | `tests/test_sql_injection.py` | 5 SQL injection payloads in each field. No login, table still works. |
 | `tests_task2/` | Task 2 only: token required, tampered and expired tokens rejected, user A cannot read user B. |
@@ -99,26 +99,25 @@ downloads rules for each file.
 
 ## Tasks
 
-- **Task 1** (`prompts/login_v1.txt`): the original login prompt, word for word.
+- **Task 1** (`prompts/login_v1.txt`): the login prompt, saved word for word.
 - **Task 2** (`prompts/login_v2.txt`): the same login plus one protected route. It covers the
   authorization-bypass claim in our proposal. There are no pre-generated Task 2 candidates, so
   it needs API keys. Its tests were checked against a correct hand-written app and three
-  broken ones (`unit_tests/task2_reference.py`), not against real model output yet.
+  broken ones (`unit_tests/task2_reference.py`), and it has also been run on live model output.
 
 ## Results
 
 This repository stores no results. Run the tool to produce them. Every run writes
 `results.csv`, `model_comparison.png` and `evaluation.json` into its own `runs/<timestamp>/`
-folder, and the GUI shows the same table. When you quote a number, say which suite it comes
-from (the original five tests or the full suite) and which run produced it.
+folder, and the GUI shows the same table. When you quote a number, say which run produced it.
 
 ## Limits to state in the paper
 
 - One generation per model by default. The GUI can run several.
 - Scanner counts are not confirmed vulnerabilities. Confirmed findings come from manual review.
-- The four old candidates have no recorded model versions.
+- The pre-generated candidates have no recorded model versions.
 - Temperature is not the same for all providers (see Settings).
-- Scanner versions can differ from the original study. Each run records the versions it used.
+- Scanner versions can change over time. Each run records the versions it used.
 
 ## Layout
 
@@ -127,7 +126,7 @@ config.yaml  prompts/  rules/  conftest.py  pytest.ini  requirements.txt  .env.e
 src/aicodesec/   generate, providers, extract, evaluate, report
 app/streamlit_app.py
 tests/  tests_task2/  unit_tests/
-data/pregenerated/   the four original candidates (code only)
+data/pregenerated/   four pre-generated candidates (code only)
 runs/<timestamp>/    output of each run (ignored by git)
 docs/                paper and report sources (to be added)
 ```

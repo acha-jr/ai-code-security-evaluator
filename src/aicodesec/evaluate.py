@@ -20,8 +20,6 @@ SCAN_TIMEOUT = 300  # Seconds before a stuck scanner is stopped.
 # Semgrep "auto" must download its rules. With no network it can hang instead of failing fast,
 # so it gets a much shorter limit. After that we fall back to the local rules.
 AUTO_TIMEOUT = 60
-# The first five tests of the study. They are reported on their own so the old 19/20 stays visible.
-ORIGINAL_FILES = ("tests.test_login", "tests.test_security_edges")
 # Semgrep is installed next to this Python, so the venv does not need to be activated.
 SEMGREP = str(Path(sys.executable).parent / "semgrep")
 
@@ -51,7 +49,7 @@ def read_results(out_file: Path) -> list | None:
 def run_tests(candidate: Path, tests_dir: str = "tests") -> dict:
     """Run a pytest suite on one candidate in a subprocess and count the results."""
     # If the tests cannot run or are stopped, report zero tests. A failing candidate is a result too.
-    no_result = {"tests_passed": 0, "tests_total": 0, "original_passed": 0, "original_total": 0}
+    no_result = {"tests_passed": 0, "tests_total": 0}
     # A temporary folder holds pytest's result file. It is deleted when the block ends.
     with tempfile.TemporaryDirectory() as temp:
         report = Path(temp) / "junit.xml"
@@ -71,13 +69,9 @@ def run_tests(candidate: Path, tests_dir: str = "tests") -> dict:
         """A test counts as passed only if it has no failure, error or skip marker."""
         return not any(case.find(tag) is not None for tag in ("failure", "error", "skipped"))
 
-    # Count the original five tests separately so the old result (such as 4/5) stays visible.
-    original = [case for case in cases if case.get("classname") in ORIGINAL_FILES]
     return {
         "tests_passed": sum(passed(case) for case in cases),
         "tests_total": len(cases),
-        "original_passed": sum(passed(case) for case in original),
-        "original_total": len(original),
     }
 
 

@@ -2,6 +2,9 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from aicodesec import generate
 from aicodesec.extract import extract_code
 from aicodesec.generate import run_generation
 from aicodesec.providers import Provider, Reply
@@ -76,3 +79,48 @@ def test_repeats_get_numbered_names(tmp_path: Path) -> None:
     """Two generations from one provider are saved as openai_1.py and openai_2.py."""
     run_dir = run_generation("Say hello", [FakeProvider("openai")], tmp_path / "runs", repeats=2, log=lambda _: None)
     assert (run_dir / "openai_1.py").exists() and (run_dir / "openai_2.py").exists()
+
+
+class FlakyProvider(FakeProvider):
+    """Fails with the given HTTP code a set number of times, then returns the canned reply."""
+
+    def __init__(self, failures: int, code: int) -> None:
+        """Remember how many times to fail, and which HTTP code the failure carries."""
+        super().__init__("gemini")
+        self.failures_left = failures
+        self.code = code
+
+    def complete(self, prompt: str) -> Reply:
+        """Raise an error that carries an HTTP code until the failures run out."""
+        if self.failures_left > 0:
+            self.failures_left -= 1
+            error = RuntimeError("provider error")
+            error.code = self.code  # Google-style errors carry the HTTP code as .code.
+            raise error
+        return super().complete(prompt)
+
+
+def run_flaky(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: FlakyProvider) -> dict:
+    """Run one generation with no real waiting and return its metadata entry."""
+    monkeypatch.setattr(generate, "RETRY_WAITS", (0, 0))
+    run_dir = run_generation("Say hello", [provider], tmp_path / "runs", log=lambda _: None)
+    return json.loads((run_dir / "metadata.json").read_text())["candidates"][0]
+
+
+def test_temporary_503_is_retried_and_then_succeeds(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two 503 errors followed by a good reply give a normal result, and the attempts are recorded."""
+    entry = run_flaky(tmp_path, monkeypatch, FlakyProvider(failures=2, code=503))
+    assert "error" not in entry and entry["attempts"] == 3
+
+
+def test_temporary_error_is_recorded_after_the_last_attempt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """If every attempt gets a 503, the failure is recorded after three tries."""
+    entry = run_flaky(tmp_path, monkeypatch, FlakyProvider(failures=10, code=503))
+    assert "error" in entry and entry["attempts"] == 3
+
+
+@pytest.mark.parametrize("code", [401, 402, 404, 429])
+def test_other_errors_are_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int) -> None:
+    """Bad key, no credits, unknown model and rate or quota errors fail at once, with one attempt."""
+    entry = run_flaky(tmp_path, monkeypatch, FlakyProvider(failures=10, code=code))
+    assert "error" in entry and entry["attempts"] == 1

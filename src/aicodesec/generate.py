@@ -11,6 +11,7 @@ Each run creates a folder like runs/20261115-183133/ that holds:
 """
 import hashlib
 import json
+import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,20 @@ from aicodesec.providers import Provider, build_providers
 
 # The repository root folder, found from this file's own location so no path is hardcoded.
 ROOT = Path(__file__).resolve().parents[2]
+
+# When a provider says "temporarily unavailable" we wait and try again. These are the waits, in
+# seconds, before the second and third attempt. After that the failure is recorded.
+RETRY_WAITS = (5, 20)
+# HTTP codes that usually go away on their own. 503 is "high demand", 500, 502 and 504 are server problems.
+# 429 is left out on purpose: it can also mean "no credits left", which waiting does not fix.
+TEMPORARY_CODES = (500, 502, 503, 504)
+
+
+def is_temporary(error: Exception) -> bool:
+    """True for errors that usually clear up by themselves, such as 503 "high demand"."""
+    # OpenAI and Anthropic errors carry the HTTP code as status_code. Google's carry it as code.
+    code = getattr(error, "status_code", None) or getattr(error, "code", None)
+    return code in TEMPORARY_CODES
 
 
 def load_config(path: Path = ROOT / "config.yaml") -> dict:
@@ -84,13 +99,22 @@ def generate_one(provider: Provider, name: str, prompt: str, run_dir: Path, log:
         "max_output_tokens": provider.max_output_tokens,
     }
     log(f"Sending prompt to {provider.label} ({provider.model})...")
-    try:
-        # The prompt goes out to the provider here, and the reply comes back.
-        reply = provider.complete(prompt)
-    except Exception as error:  # Any API or network failure is saved as the result for this provider.
-        log(f"  {provider.label} failed: {error}")
-        entry["error"] = f"{type(error).__name__}: {error}"
-        return entry
+    waits = iter(RETRY_WAITS)
+    entry["attempts"] = 0
+    while True:
+        entry["attempts"] += 1
+        try:
+            # The prompt goes out to the provider here, and the reply comes back.
+            reply = provider.complete(prompt)
+            break
+        except Exception as error:  # Any API or network failure is saved as the result for this provider.
+            wait = next(waits, None)  # None means there are no attempts left.
+            if wait is None or not is_temporary(error):
+                log(f"  {provider.label} failed: {error}")
+                entry["error"] = f"{type(error).__name__}: {error}"
+                return entry
+            log(f"  {provider.label} is busy right now. Trying again in {wait} seconds...")
+            time.sleep(wait)
 
     # Save the raw reply first, then the code taken out of it. Nothing is edited.
     (run_dir / "raw" / f"{name}.txt").write_text(reply.text)

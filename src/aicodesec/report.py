@@ -41,8 +41,8 @@ def build_table(evaluation_file: Path, reviews: list[dict], labels: dict[str, st
     """Combine tests, scanner counts and manual reviews into one row per candidate."""
     evaluation = json.loads(evaluation_file.read_text())
 
-    # Look up the model name each candidate really came from. Old files have none, so
-    # they stay "Not recorded". We never guess a model version.
+    # Look up the model name each candidate really came from. Pre-generated files have
+    # none, so they stay "Not recorded". We never guess a model version.
     models = {}
     if metadata_file and metadata_file.exists():
         for item in json.loads(metadata_file.read_text())["candidates"]:
@@ -59,8 +59,6 @@ def build_table(evaluation_file: Path, reviews: list[dict], labels: dict[str, st
             "candidate_file": item["candidate_file"],
             "functional_tests_passed": item["tests_passed"],
             "functional_tests_total": item["tests_total"],
-            "original_tests_passed": item["original_passed"],
-            "original_tests_total": item["original_total"],
             "bandit_findings": item["bandit_findings"],
             "semgrep_findings": item["semgrep_findings"],
             # Confirmed findings are just the number of manual review rows for this provider.
@@ -78,14 +76,11 @@ def build_table(evaluation_file: Path, reviews: list[dict], labels: dict[str, st
     # and shows the missing ones as <NA>, instead of turning every count into a decimal.
     for column in ("bandit_findings", "semgrep_findings"):
         table[column] = table[column].astype("Int64")
-    # Task 2 has no original five tests, so those columns would only show zeros.
-    if table["original_tests_total"].sum() == 0:
-        table = table.drop(columns=["original_tests_passed", "original_tests_total"])
     return table
 
 
 def save_chart(table: pd.DataFrame, path: Path) -> None:
-    """Draw pass rate and confirmed findings per candidate, like the original chart."""
+    """Draw pass rate and confirmed findings per candidate, one chart above the other."""
     figure, (top, bottom) = plt.subplots(2, 1, figsize=(7, 8))  # Two charts, one above the other.
     stems = table["candidate_file"].str.removesuffix(".py")
     # Repeated generations are named openai_1, openai_2 and so on. Show the number after the label.

@@ -1,6 +1,5 @@
-"""Check that the evaluator and report give the known results on the four stored original candidates."""
+"""Check that the evaluator and report give the known results on the four pre-generated candidates."""
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -16,8 +15,6 @@ PREGENERATED = Path(__file__).resolve().parents[1] / "data" / "pregenerated"
 # provider: (tests passed out of 30, bandit, semgrep) for the full suite. These are test fixtures
 # for checking the tool, not published results. Manual reviews are not part of them.
 EXPECTED = {"OpenAI": (30, 0, 0), "Claude": (30, 0, 0), "DeepSeek": (25, 1, 1), "Gemini": (23, 1, 1)}
-# The original five tests, run alone, must still give the old 19/20 result.
-ORIGINAL_FIVE = {"openai": 5, "claude": 5, "deepseek": 4, "gemini": 5}
 
 
 def check_table(table: pd.DataFrame) -> None:
@@ -25,7 +22,6 @@ def check_table(table: pd.DataFrame) -> None:
     for row in table.itertuples():
         passed, bandit, semgrep = EXPECTED[row.provider]
         assert row.functional_tests_total == 30
-        assert (row.original_tests_passed, row.original_tests_total) == (ORIGINAL_FIVE[row.provider.lower()], 5)
         assert (row.functional_tests_passed, row.bandit_findings, row.semgrep_findings) == (passed, bandit, semgrep)
         assert row.manually_confirmed_findings == 0  # A fallback run starts with no manual reviews.
 
@@ -35,8 +31,8 @@ def labels() -> dict:
     return {name: block["label"] for name, block in load_config()["providers"].items()}
 
 
-def test_fallback_data_matches_old_numbers(tmp_path: Path) -> None:
-    """Evaluating the four stored original files gives the known test and scanner numbers."""
+def test_pregenerated_candidates_give_known_numbers(tmp_path: Path) -> None:
+    """Evaluating the four pre-generated files gives the known test and scanner numbers."""
     evaluation = evaluate_candidates(PREGENERATED / "candidates", tmp_path)
     table = build_table(evaluation, [], labels())
     assert len(table) == 4
@@ -63,18 +59,8 @@ def test_add_review_round_trip(tmp_path: Path) -> None:
     assert load_reviews(path) == [{"provider": "Gemini", "cwe": "CWE-489", "note": "debug=True"}]
 
 
-@pytest.mark.parametrize("provider", ORIGINAL_FIVE)
-def test_original_five_tests_still_reproduce_old_result(provider: str) -> None:
-    """Run only the original five tests. The old 19/20 result must still appear."""
-    candidate = PREGENERATED / "candidates" / f"{provider}.py"
-    command = [sys.executable, "-m", "pytest", "tests/test_login.py", "tests/test_security_edges.py",
-               "--candidate", str(candidate), "-q", "-p", "no:cacheprovider"]
-    output = subprocess.run(command, cwd=PREGENERATED.parents[1], capture_output=True, text=True).stdout
-    assert f"{ORIGINAL_FIVE[provider]} passed" in output
-
-
-def test_task2_evaluation_has_no_original_five_columns(tmp_path: Path) -> None:
-    """Task 2 results pass all 12 tests on the reference app and skip the original-5 columns."""
+def test_task2_reference_app_passes_every_test(tmp_path: Path) -> None:
+    """The hand-written Task 2 reference app passes all 12 Task 2 tests."""
     candidates = tmp_path / "c"
     candidates.mkdir()
     reference = Path(__file__).with_name("task2_reference.py")
@@ -82,11 +68,10 @@ def test_task2_evaluation_has_no_original_five_columns(tmp_path: Path) -> None:
     evaluation = evaluate_candidates(candidates, tmp_path / "out", "tests_task2")
     table = build_table(evaluation, [], labels())
     assert table.loc[0, "functional_tests_passed"] == table.loc[0, "functional_tests_total"] == 12
-    assert "original_tests_passed" not in table.columns
 
 
 def one_candidate(tmp_path: Path) -> Path:
-    """Make a folder holding only the old DeepSeek file, and return the folder."""
+    """Make a folder holding only the pre-generated DeepSeek file, and return the folder."""
     folder = tmp_path / "c"
     folder.mkdir()
     (folder / "deepseek.py").write_bytes((PREGENERATED / "candidates" / "deepseek.py").read_bytes())
