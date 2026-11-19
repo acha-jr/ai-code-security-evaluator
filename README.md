@@ -13,7 +13,8 @@ same pytest tests plus Bandit and Semgrep on each result, and shows the comparis
    `metadata.json`. The code is saved exactly as the model wrote it.
 2. **Evaluate.** `src/aicodesec/evaluate.py` runs the shared tests in a subprocess against
    each candidate file, then runs Bandit and Semgrep and saves their JSON.
-3. **Compare.** `src/aicodesec/report.py` builds the results table, `results.csv` and the chart.
+3. **Compare.** `src/aicodesec/report.py` builds the results table, `results.csv`, `findings.csv`
+   and the chart.
    Manual review findings are typed into the GUI and saved. They are not computed.
 
 ## Install
@@ -73,6 +74,24 @@ used is saved in the results (`semgrep_ruleset`). The local ruleset has only two
 offline runs can find fewer issues. If a scanner cannot run at all, its count shows as "n/a"
 and is never reported as 0, because 0 would wrongly mean "scanned and clean".
 
+## What did not pass
+
+Step 3 of the GUI, and `findings.csv` in each run folder, list everything that did not pass:
+
+- **Failed tests.** Each one is shown with the kind of weakness it probes, a CWE number, and
+  the error the candidate raised (for example `AttributeError: 'list' object has no attribute 'get'`).
+- **Scanner findings.** Each Bandit and Semgrep finding is shown with its rule, CWE and line.
+
+The main table also has a "Failed tests by weakness" column, for example
+`Improper input validation (CWE-20): 5 failed`.
+
+Which test points to which weakness is set in `src/aicodesec/categories.py`. It is our own
+classification by test group: SQL injection tests map to CWE-89, malformed input to CWE-20, and
+the Task 2 token tests to authentication, signature, expiry and access-control weaknesses. A
+failed test shows how the code behaved, not a proven exploit. Manual review is where a person
+confirms a real vulnerability. When you add a test, add it to `categories.py` too. A unit test
+fails if one is missing.
+
 ## Settings
 
 `config.yaml` holds the model IDs, temperature, token limit, timeout and number of
@@ -93,6 +112,10 @@ some OpenAI models only allow their default. DeepSeek and Gemini use 0.0. Mentio
 | `tests/test_sql_injection.py` | 5 SQL injection payloads in each field. No login, table still works. |
 | `tests_task2/` | Task 2 only: token required, tampered and expired tokens rejected, user A cannot read user B. |
 | `unit_tests/` | Tests for this tool itself (extraction, generation with a fake provider, evaluation, report). |
+
+The pass rate mixes two kinds of tests: a few check that the endpoint works, and most probe
+security (bad input, SQL injection and, for Task 2, authorization). It is a combined test pass
+rate, not a purely functional one.
 
 Run the tool's own tests with `pytest unit_tests`. They take a few minutes because Semgrep
 downloads rules for each file.
@@ -123,7 +146,7 @@ folder, and the GUI shows the same table. When you quote a number, say which run
 
 ```
 config.yaml  prompts/  rules/  conftest.py  pytest.ini  requirements.txt  .env.example
-src/aicodesec/   generate, providers, extract, evaluate, report
+src/aicodesec/   generate, providers, extract, evaluate, report, categories
 app/streamlit_app.py
 tests/  tests_task2/  unit_tests/
 data/pregenerated/   four pre-generated candidates (code only)

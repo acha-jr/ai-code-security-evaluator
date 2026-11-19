@@ -13,6 +13,8 @@ from collections.abc import Callable
 from importlib.metadata import version
 from pathlib import Path
 
+from aicodesec.categories import categorize
+
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL_RULES = ROOT / "rules" / "semgrep_local.yml"
 TEST_TIMEOUT = 120  # Seconds before a stuck test run is stopped.
@@ -47,9 +49,9 @@ def read_results(out_file: Path) -> list | None:
 
 
 def run_tests(candidate: Path, tests_dir: str = "tests") -> dict:
-    """Run a pytest suite on one candidate in a subprocess and count the results."""
+    """Run a pytest suite on one candidate in a subprocess and list which tests failed and why."""
     # If the tests cannot run or are stopped, report zero tests. A failing candidate is a result too.
-    no_result = {"tests_passed": 0, "tests_total": 0}
+    no_result = {"tests_passed": 0, "tests_total": 0, "failed_tests": []}
     # A temporary folder holds pytest's result file. It is deleted when the block ends.
     with tempfile.TemporaryDirectory() as temp:
         report = Path(temp) / "junit.xml"
@@ -65,18 +67,20 @@ def run_tests(candidate: Path, tests_dir: str = "tests") -> dict:
         # The XML file lists one <testcase> per test. A failed test has a <failure> or <error> inside it.
         cases = list(ET.parse(report).getroot().iter("testcase"))
 
-    def passed(case: ET.Element) -> bool:
-        """A test counts as passed only if it has no failure, error or skip marker."""
-        return not any(case.find(tag) is not None for tag in ("failure", "error", "skipped"))
-
-    return {
-        "tests_passed": sum(passed(case) for case in cases),
-        "tests_total": len(cases),
-    }
+    failed = []
+    for case in cases:
+        marker = next((child for child in case if child.tag in ("failure", "error", "skipped")), None)
+        if marker is None:
+            continue  # No failure marker means the test passed.
+        kind, cwe = categorize(case.get("name"))
+        # The first line of the message is the error, for example "AttributeError: 'list' object has no attribute 'get'".
+        error = (marker.get("message") or marker.tag).splitlines()[0][:200]
+        failed.append({"test": case.get("name"), "type": kind, "cwe": cwe, "error": error})
+    return {"tests_passed": len(cases) - len(failed), "tests_total": len(cases), "failed_tests": failed}
 
 
 def run_bandit(candidate: Path, out_file: Path) -> dict:
-    """Run Bandit, save its JSON, and return the finding count and CWE ids.
+    """Run Bandit, save its JSON, and return the finding count, CWE ids and each issue.
 
     If Bandit times out or writes no usable file, the count is None ("not run").
     A 0 would wrongly say the code was scanned and found clean.
@@ -87,10 +91,20 @@ def run_bandit(candidate: Path, out_file: Path) -> dict:
     results = read_results(out_file) if finished else None
     if results is None:
         out_file.unlink(missing_ok=True)  # Drop a half-written file.
-        return {"bandit_findings": None, "bandit_cwes": []}
+        return {"bandit_findings": None, "bandit_cwes": [], "bandit_issues": []}
+    issues = [
+        {
+            "rule": f"{item['test_id']} {item['test_name']}",
+            "cwe": f"CWE-{item['issue_cwe']['id']}",
+            "line": item["line_number"],
+            "text": item["issue_text"],
+        }
+        for item in results
+    ]
     return {
         "bandit_findings": len(results),
-        "bandit_cwes": sorted({f"CWE-{item['issue_cwe']['id']}" for item in results}),
+        "bandit_cwes": sorted({issue["cwe"] for issue in issues}),
+        "bandit_issues": issues,
     }
 
 
@@ -108,10 +122,20 @@ def run_semgrep(candidate: Path, out_file: Path) -> dict:
         results = read_results(out_file) if finished else None
         if results is not None:
             # Record which ruleset really ran, so offline results are never presented as online ones.
-            return {"semgrep_findings": len(results), "semgrep_ruleset": ruleset}
+            issues = [
+                {
+                    "rule": item["check_id"].split(".")[-1],  # The registry id is long. Keep the last part.
+                    # Semgrep lists CWEs as text like "CWE-489: Active Debug Code". Keep just the id.
+                    "cwe": next(iter(item["extra"].get("metadata", {}).get("cwe", [])), "").split(":")[0],
+                    "line": item["start"]["line"],
+                    "text": item["extra"]["message"][:200],
+                }
+                for item in results
+            ]
+            return {"semgrep_findings": len(results), "semgrep_ruleset": ruleset, "semgrep_issues": issues}
     # Neither ruleset produced a result. Say "not run" (None), never a false 0.
     out_file.unlink(missing_ok=True)
-    return {"semgrep_findings": None, "semgrep_ruleset": "failed to run"}
+    return {"semgrep_findings": None, "semgrep_ruleset": "failed to run", "semgrep_issues": []}
 
 
 def evaluate_candidates(

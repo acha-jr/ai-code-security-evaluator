@@ -8,6 +8,7 @@ finding means a person read the code and confirmed a real problem.
 """
 import csv
 import json
+from collections import Counter
 from pathlib import Path
 
 import matplotlib
@@ -17,6 +18,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 REVIEW_FIELDS = ["provider", "cwe", "note"]  # The three columns of manual_reviews.csv.
+FINDING_COLUMNS = ["provider", "candidate", "source", "vulnerability_type", "cwe", "detail", "line"]
 
 
 def load_reviews(path: Path) -> list[dict]:
@@ -35,6 +37,40 @@ def add_review(path: Path, provider: str, cwe: str, note: str) -> None:
         if is_new:
             writer.writeheader()  # Column names go in the first row of a new file only.
         writer.writerow({"provider": provider, "cwe": cwe, "note": note})
+
+
+def failed_types(failed_tests: list[dict]) -> str:
+    """Summarize failed tests by weakness type, for example "SQL injection (CWE-89): 2 failed"."""
+    counts = Counter((test["type"], test["cwe"]) for test in failed_tests)
+    parts = [f"{kind} ({cwe}): {number} failed" if cwe else f"{kind}: {number} failed" for (kind, cwe), number in counts.items()]
+    return "; ".join(parts) or "None"
+
+
+def build_findings(evaluation_file: Path, labels: dict[str, str]) -> pd.DataFrame:
+    """List everything that did not pass: each failed test and each scanner finding, one row each.
+
+    A failed test shows the kind of weakness it probes and the error the candidate raised.
+    A scanner finding shows the tool's rule, its CWE and the line of code.
+    """
+    evaluation = json.loads(evaluation_file.read_text())
+    rows = []
+    for item in evaluation["results"]:
+        who = {"provider": labels[item["name"].split("_")[0]], "candidate": item["candidate_file"]}
+        for test in item.get("failed_tests", []):
+            rows.append({**who, "source": "Tests", "vulnerability_type": test["type"], "cwe": test["cwe"],
+                         "detail": f"{test['test']}: {test['error']}", "line": None})
+        for tool, issues in (("Bandit", item.get("bandit_issues", [])), ("Semgrep", item.get("semgrep_issues", []))):
+            for issue in issues:
+                rows.append({**who, "source": tool, "vulnerability_type": issue["rule"], "cwe": issue["cwe"],
+                             "detail": issue["text"], "line": issue["line"]})
+    findings = pd.DataFrame(rows, columns=FINDING_COLUMNS)
+    findings["line"] = findings["line"].astype("Int64")  # Whole line numbers, with a blank where there is none.
+    # Keep the provider order from config.yaml, then tests first and scanners after.
+    order = list(labels.values())
+    findings["order"] = findings["provider"].map(order.index)
+    findings["tool_order"] = findings["source"].map({"Tests": 0, "Bandit": 1, "Semgrep": 2})
+    findings = findings.sort_values(["order", "candidate", "tool_order"], kind="stable")
+    return findings[FINDING_COLUMNS].reset_index(drop=True)
 
 
 def build_table(evaluation_file: Path, reviews: list[dict], labels: dict[str, str], metadata_file: Path | None = None) -> pd.DataFrame:
@@ -57,12 +93,13 @@ def build_table(evaluation_file: Path, reviews: list[dict], labels: dict[str, st
             "provider": label,
             "model_version": models.get(item["name"], "Not recorded"),
             "candidate_file": item["candidate_file"],
-            "functional_tests_passed": item["tests_passed"],
-            "functional_tests_total": item["tests_total"],
+            "tests_passed": item["tests_passed"],
+            "tests_total": item["tests_total"],
             "bandit_findings": item["bandit_findings"],
             "semgrep_findings": item["semgrep_findings"],
             # Confirmed findings are just the number of manual review rows for this provider.
             "manually_confirmed_findings": len(mine),
+            "failed_vulnerability_types": failed_types(item.get("failed_tests", [])),
             "cwe_classification": "; ".join(sorted({review["cwe"] for review in mine})) or "None assigned",
             "manual_review_notes": " ".join(review["note"] for review in mine) or "No specific vulnerability confirmed.",
             "semgrep_ruleset": item["semgrep_ruleset"],
@@ -85,9 +122,9 @@ def save_chart(table: pd.DataFrame, path: Path) -> None:
     stems = table["candidate_file"].str.removesuffix(".py")
     # Repeated generations are named openai_1, openai_2 and so on. Show the number after the label.
     names = [f"{label} {stem.split('_')[1]}" if "_" in stem else label for label, stem in zip(table["provider"], stems)]
-    rate = 100 * table["functional_tests_passed"] / table["functional_tests_total"]
+    rate = 100 * table["tests_passed"] / table["tests_total"]
     top.bar(names, rate, color="#6553BD")
-    top.set(title="Functional test pass rate", ylabel="Passed (%)", ylim=(0, 110))
+    top.set(title="Test pass rate (functional and security tests)", ylabel="Tests passed (%)", ylim=(0, 110))
     bottom.bar(names, table["manually_confirmed_findings"], color="#273B63")
     bottom.set(title="Manually confirmed issue instances", ylabel="Issue instances")
     bottom.yaxis.get_major_locator().set_params(integer=True)  # Whole numbers only, since we count issues.

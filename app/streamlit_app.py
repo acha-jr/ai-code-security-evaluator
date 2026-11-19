@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from aicodesec import generate  # noqa: E402  (needs the path line above)
 from aicodesec.evaluate import evaluate_candidates  # noqa: E402
 from aicodesec.providers import build_providers  # noqa: E402
-from aicodesec.report import add_review, build_table, load_reviews, save_chart  # noqa: E402
+from aicodesec.report import add_review, build_findings, build_table, load_reviews, save_chart  # noqa: E402
 
 PREGENERATED = ROOT / "data" / "pregenerated"
 
@@ -60,9 +60,12 @@ def candidate_card(item: dict, run_dir: Path) -> None:
 def results_table(table: pd.DataFrame) -> None:
     """Show the comparison table with a bar for the test pass rate."""
     shown = table.copy()  # Work on a copy so the CSV keeps the original column names.
-    shown["pass rate"] = 100 * shown["functional_tests_passed"] / shown["functional_tests_total"]
-    shown["tests"] = shown["functional_tests_passed"].astype(str) + "/" + shown["functional_tests_total"].astype(str)
-    columns = ["provider", "model_version", "tests", "pass rate","bandit_findings", "semgrep_findings", "manually_confirmed_findings", "cwe_classification", "semgrep_ruleset"]
+    shown["pass rate"] = 100 * shown["tests_passed"] / shown["tests_total"]
+    shown["tests"] = shown["tests_passed"].astype(str) + "/" + shown["tests_total"].astype(str)
+    columns = [
+        "provider", "model_version", "tests", "pass rate", "failed_vulnerability_types",
+        "bandit_findings", "semgrep_findings", "manually_confirmed_findings", "cwe_classification", "semgrep_ruleset",
+    ]
     st.dataframe(
         shown[columns],
         hide_index=True,
@@ -73,6 +76,7 @@ def results_table(table: pd.DataFrame) -> None:
             "provider": "Provider",
             "model_version": "Model",
             "tests": "Tests passed",
+            "failed_vulnerability_types": "Failed tests by weakness",
             "bandit_findings": "Bandit",
             "semgrep_findings": "Semgrep",
             "manually_confirmed_findings": "Confirmed",
@@ -233,20 +237,47 @@ with tab_compare:
             with column.container(border=True):
                 st.metric(
                     row.provider,
-                    f"{row.functional_tests_passed}/{row.functional_tests_total} tests",
+                    f"{row.tests_passed}/{row.tests_total} tests",
                     f"Bandit {count_text(row.bandit_findings)} · Semgrep {count_text(row.semgrep_findings)} · Confirmed {row.manually_confirmed_findings}",
                     delta_color="off",
                     delta_arrow="off",
                 )
 
         results_table(table)
+
+        # Everything that did not pass: each failed test (with the weakness it points to and the
+        # error it raised) and each scanner finding (with its rule, CWE and line).
+        findings = build_findings(evaluation, labels)
+        st.markdown("**What did not pass**")
+        if findings.empty:
+            st.success("No failed tests and no scanner findings.")
+        else:
+            st.caption(
+                "Failed tests are grouped by the kind of weakness they probe. That grouping is our own classification: "
+                "a failed test shows how the code behaved, not a proven exploit. Scanner rows show the tool's own rule and CWE."
+            )
+            st.dataframe(
+                findings,
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "provider": "Provider", "candidate": "File", "source": "Found by",
+                    "vulnerability_type": "Weakness or rule", "cwe": "CWE", "detail": "Detail", "line": "Line",
+                },
+            )
+
         # Save the same numbers to disk, so the GUI, the CSV and the chart can never disagree.
         table.to_csv(run_dir / "results.csv", index=False)
+        findings.to_csv(run_dir / "findings.csv", index=False)
         save_chart(table, run_dir / "model_comparison.png")
         # The chart is tall (two charts stacked), so cap its width instead of filling the wide page.
         st.image(str(run_dir / "model_comparison.png"), width=560)
         st.download_button("Download results.csv", (run_dir / "results.csv").read_bytes(), "results.csv", icon=":material/download:")
-        st.caption("Bandit and Semgrep findings can overlap when both flag the same issue.")
+        st.download_button("Download findings.csv", (run_dir / "findings.csv").read_bytes(), "findings.csv", icon=":material/download:")
+        st.caption(
+            "Tests passed counts a few functional checks and mostly security probes (malformed input, SQL injection, "
+            "and for Task 2, authorization). Bandit and Semgrep findings can overlap when both flag the same issue."
+        )
 
         # Manual review: a person records what they confirmed by reading the code.
         # These rows are saved to manual_reviews.csv and counted as "confirmed findings".
